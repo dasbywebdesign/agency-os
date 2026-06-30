@@ -563,9 +563,9 @@ function DashboardTab({roster,deals}){
 
 // ─── SETTINGS TAB ─────────────────────────────────────────────────────────────
 // ─── CONTRACT TEMPLATE ────────────────────────────────────────────────────────
-const CONTRACT_TEMPLATE = (creator, agencyName, agencyAddress, repName) => `MOTH MEDIA EXCLUSIVE AGREEMENT
+const CONTRACT_TEMPLATE = (creator, agencyName, agencyAddress, repName, creatorAddress) => `MOTH MEDIA EXCLUSIVE AGREEMENT
 
-This Agreement ("Agreement") is entered into as of ${new Date().toLocaleDateString()}, ("Effective Date") by and between ${agencyName||"MOTH MEDIA"}, with its principal place of business located at ${agencyAddress||"_______________________________"} ("COMPANY"), and ${creator?.name||"_______________________________"}, residing at _______________________________ ("CLIENT"). COMPANY and CLIENT are referred to herein individually as a "Party" and collectively as "Parties".
+This Agreement ("Agreement") is entered into as of ${new Date().toLocaleDateString()}, ("Effective Date") by and between ${agencyName||"MOTH MEDIA"}, with its principal place of business located at ${agencyAddress||"_______________________________"} ("COMPANY"), and ${creator?.name||"_______________________________"}, residing at ${creatorAddress||"_______________________________"} ("CLIENT"). COMPANY and CLIENT are referred to herein individually as a "Party" and collectively as "Parties".
 
 1. ENGAGEMENT - i. CLIENT hereby engages COMPANY on an exclusive basis to commercially promote and market CLIENT's name, likeness, social media account(s), biographical data, and any other skill, talent, or product of CLIENT; and
 
@@ -694,6 +694,7 @@ function ContractsTab({roster,setRoster,agencySettings,setAgencySettings}){
           {contract&&contract.status==="Signed"&&<div style={{background:"#ECFDF5",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px",marginBottom:16}}>
             <div style={{fontWeight:800,color:"#065F46",marginBottom:6}}>✓ Contract Signed</div>
             <div style={{fontSize:13,color:"#374151"}}>Signed name: <strong>{contract.signed_name}</strong></div>
+            <div style={{fontSize:13,color:"#374151"}}>Address: <strong>{contract.signed_address||"Not provided"}</strong></div>
             <div style={{fontSize:13,color:"#374151"}}>Date & time: <strong>{new Date(contract.signed_at).toLocaleString()}</strong></div>
             <div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>Recorded IP: {contract.signed_ip||"Not captured"}</div>
           </div>}
@@ -741,6 +742,7 @@ function SigningPage({contractId}){
   const[contract,setContract]=useState(null);
   const[loading,setLoading]=useState(true);
   const[signedName,setSignedName]=useState("");
+  const[signedAddress,setSignedAddress]=useState("");
   const[agreed,setAgreed]=useState(false);
   const[submitting,setSubmitting]=useState(false);
   const[done,setDone]=useState(false);
@@ -758,6 +760,7 @@ function SigningPage({contractId}){
 
   async function submitSignature(){
     if(!signedName.trim()){setError("Please type your full legal name.");return;}
+    if(!signedAddress.trim()){setError("Please enter your residential address.");return;}
     if(!agreed){setError("Please check the box to confirm you agree to the terms.");return;}
     setSubmitting(true);setError("");
     let ip="";
@@ -767,11 +770,18 @@ function SigningPage({contractId}){
       ip=ipData.ip||"";
     }catch(e){ip="unavailable";}
 
+    const finalText=contract.contract_text.replace(
+      "residing at _______________________________ (\"CLIENT\")",
+      `residing at ${signedAddress.trim()} ("CLIENT")`
+    );
+
     const{error:updateError}=await supabase.from("contracts").update({
       status:"Signed",
       signed_name:signedName.trim(),
+      signed_address:signedAddress.trim(),
       signed_at:new Date().toISOString(),
-      signed_ip:ip
+      signed_ip:ip,
+      contract_text:finalText
     }).eq("id",contractId);
 
     if(updateError){setError("Error submitting signature: "+updateError.message);setSubmitting(false);return;}
@@ -804,6 +814,7 @@ function SigningPage({contractId}){
         <p style={{color:"#374151",fontSize:14,marginBottom:20}}>Thank you, {contract.signed_name||signedName}. Your representation agreement has been signed and recorded.</p>
         <div style={{background:"#F9FAFB",borderRadius:8,padding:"14px 18px",textAlign:"left",fontSize:13,color:"#6B7280"}}>
           <div>Signed by: <strong style={{color:"#0D1B3E"}}>{contract.signed_name||signedName}</strong></div>
+          <div>Address: <strong style={{color:"#0D1B3E"}}>{contract.signed_address||signedAddress}</strong></div>
           <div>Date & time: <strong style={{color:"#0D1B3E"}}>{contract.signed_at?new Date(contract.signed_at).toLocaleString():new Date().toLocaleString()}</strong></div>
         </div>
         <p style={{color:"#9CA3AF",fontSize:12,marginTop:20}}>A copy of this signed agreement is on file with {contract.agency_name}. You may screenshot this page for your records.</p>
@@ -817,6 +828,9 @@ function SigningPage({contractId}){
           <h3 style={{margin:"0 0 16px",color:"#0D1B3E",fontSize:16}}>Sign This Agreement</h3>
           <Fld label="Type Your Full Legal Name">
             <Inp value={signedName} onChange={setSignedName} placeholder="e.g. Jane Marie Smith"/>
+          </Fld>
+          <Fld label="Your Residential Address">
+            <Inp value={signedAddress} onChange={setSignedAddress} placeholder="e.g. 123 Main St, Los Angeles, CA 90001"/>
           </Fld>
           <label style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:13,color:"#374151",marginBottom:18,cursor:"pointer"}}>
             <input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} style={{marginTop:3,width:16,height:16,flexShrink:0}}/>
