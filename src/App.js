@@ -562,7 +562,355 @@ function DashboardTab({roster,deals}){
 }
 
 // ─── SETTINGS TAB ─────────────────────────────────────────────────────────────
-function SettingsTab({apiKey,setApiKey}){
+// ─── CONTRACT TEMPLATE ────────────────────────────────────────────────────────
+const CONTRACT_TEMPLATE = (creator, agencyName, agencyAddress, repName) => `MOTH MEDIA EXCLUSIVE AGREEMENT
+
+This Agreement ("Agreement") is entered into as of ${new Date().toLocaleDateString()}, ("Effective Date") by and between ${agencyName||"MOTH MEDIA"}, with its principal place of business located at ${agencyAddress||"_______________________________"} ("COMPANY"), and ${creator?.name||"_______________________________"}, residing at _______________________________ ("CLIENT"). COMPANY and CLIENT are referred to herein individually as a "Party" and collectively as "Parties".
+
+1. ENGAGEMENT - i. CLIENT hereby engages COMPANY on an exclusive basis to commercially promote and market CLIENT's name, likeness, social media account(s), biographical data, and any other skill, talent, or product of CLIENT; and
+
+2. SERVICES - COMPANY shall promote and market CLIENT to brands, prospective employers, agencies, vendors, and/or other third parties, in relation to the Entertainment Industry.
+
+3. COMPANY'S AUTHORITY - COMPANY may commercially exploit and use CLIENT's name, likeness, facsimile signature, and related materials in any and all media now known or hereinafter created, for the purposes of promoting CLIENT, CLIENT work product and CLIENT's name in the Entertainment Industry. COMPANY may additionally use CLIENT's name and likeness, in COMPANY'S marketing and promotional materials identifying CLIENT as a client of COMPANY. CLIENT shall retain all creative control over content, posting schedule, video concepts, and anything pertaining to video / channel creative or activities related to creative.
+
+4. TERM - CLIENT hereby engages COMPANY on an exclusive basis for a period of (12 months) commencing on the Effective Date (the "Initial Term"). At the end of the initial term, Both CLIENT and COMPANY must mutually agree in writing the intent to renew this agreement for a period of 12 months.
+
+5. COMPENSATION - In consideration of COMPANY's services under this Agreement, CLIENT agrees to pay COMPANY twenty percent (20%) of any and all gross revenue, monies, earnings, funds, compensation and/or other consideration ("Gross Earnings") received by COMPANY in connection with COMPANY's outbound services (meaning third party engagements provided by COMPANY to CLIENT) under this Agreement for CLIENT's services in the Entertainment Industry during the Term of this Agreement including any agreements entered into and/or negotiated, during the Term. All Gross Earnings shall be collected by and made payable to COMPANY. The commissions due to COMPANY hereunder shall be made payable to COMPANY immediately upon receipt of the Gross Earnings upon which the commission is based. Upon CLIENT's prior written or verbal request, COMPANY agrees to provide CLIENT with inbound services (meaning COMPANY's administration and/or negotiation of third party inquiries and/or engagements received by CLIENT directly in connection with CLIENT's social media platforms) concerning CLIENT's social media platforms. CLIENT agrees to pay COMPANY twenty percent (20%) of any and all gross revenue inbound services, monies, earnings, funds, compensation and/or other consideration ("Gross Earnings") received by COMPANY in connection with COMPANY's inbound services under this Agreement.
+
+6. TERMINATION - Either Party may terminate this agreement at any time by providing written notice to the other Party. CLIENT's payment obligations hereunder shall remain in full force and effect upon the termination or expiration of the Agreement for any agreements entered into or negotiated prior to the date of termination or expiration of this Agreement.
+
+7. ENTIRE AGREEMENT - This Agreement including the standard terms and conditions attached hereto (via hyperlink) contains the entire understanding of the Parties hereto relating to the subject matter hereof and cannot be modified or terminated except by an instrument signed by both Parties.
+
+8. THIRD PARTY DEALINGS - During the Term, Client may be approached by, or may independently engage with, third parties in connection with potential brand sponsorships, endorsements, or other commercial engagements (collectively, "Third Party Opportunities"). In the event such Third Party Opportunities arise, Client shall promptly notify Company and provide all material terms and information related thereto. Company shall have the right to review and approve any such Third Party Opportunity, which approval shall not be unreasonably withheld, conditioned, or delayed. If Company approves the Third Party Opportunity, such opportunity shall be governed by, and subject to, the same terms and conditions set forth in this agreement, unless otherwise agreed in writing by the Parties.
+
+9. GOVERNING LAW - This Agreement shall be deemed to have been executed in and shall be construed in accordance with California law.
+
+IN WITNESS WHEREOF, the parties hereto have caused this Exclusive Agreement to be executed as of the date indicated below.
+
+In witness whereof, with the parties hereto have executed this Agreement as of the date first above written in full good faith and understanding with a mutual goal of building a successful brand-creator relationship.
+
+COMPANY: ${agencyName||"MOTH MEDIA"}
+Name: ${repName||"_______________________________"}
+
+CREATOR:
+Name: ${creator?.name||"_______________________________"}
+
+${agencyName||"Moth Media"} • This Agreement does not constitute legal advice; both Parties are encouraged to seek independent counsel.`;
+
+// ─── CONTRACTS TAB ─────────────────────────────────────────────────────────────
+function ContractsTab({roster,setRoster,agencySettings,setAgencySettings}){
+  const[selected,setSelected]=useState(null);
+  const[showSettings,setShowSettings]=useState(false);
+  const[localSettings,setLocalSettings]=useState(agencySettings);
+  const[contracts,setContracts]=useState({}); // creator_id -> latest contract record
+  const[linkCopied,setLinkCopied]=useState(false);
+
+  useEffect(()=>{
+    async function loadContracts(){
+      const{data}=await supabase.from("contracts").select("*").order("created_at",{ascending:false});
+      if(data){
+        const map={};
+        data.forEach(c=>{ if(!map[c.creator_id]) map[c.creator_id]=c; }); // first = most recent due to order
+        setContracts(map);
+      }
+    }
+    loadContracts();
+    const sub=supabase.channel("contracts").on("postgres_changes",{event:"*",schema:"public",table:"contracts"},loadContracts).subscribe();
+    return()=>sub.unsubscribe();
+  },[]);
+
+  function saveSettings(){setAgencySettings(localSettings);setShowSettings(false);}
+
+  async function generateAndSend(creator){
+    const contractId=(crypto.randomUUID?crypto.randomUUID():"c_"+Date.now()+"_"+Math.random().toString(36).slice(2));
+    const text=CONTRACT_TEMPLATE(creator,agencySettings.name,agencySettings.address,agencySettings.repName);
+    const record={
+      id:contractId, creator_id:creator.id, creator_name:creator.name,
+      contract_text:text, agency_name:agencySettings.name||"Moth Media", status:"Sent"
+    };
+    const{data,error}=await supabase.from("contracts").insert(record).select().single();
+    if(error){alert("Error creating contract: "+error.message);return null;}
+    setContracts(c=>({...c,[creator.id]:data}));
+    await supabase.from("creators").update({contract_status:"Sent",contract_sent_at:new Date().toISOString()}).eq("id",creator.id);
+    setRoster(r=>r.map(c=>c.id===creator.id?{...c,contract_status:"Sent"}:c));
+    return data;
+  }
+
+  function signingUrl(contractId){
+    return `${window.location.origin}${window.location.pathname}#sign/${contractId}`;
+  }
+
+  const statusColor={"None":"#9CA3AF","Sent":"#F59E0B","Signed":"#059669","Expired":"#EF4444"};
+  const statusBg={"None":"#F3F4F6","Sent":"#FFFBEB","Signed":"#ECFDF5","Expired":"#FEF2F2"};
+
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <div>
+        <h2 style={{margin:0,color:"#0D1B3E",fontSize:18}}>📄 Contracts</h2>
+        <p style={{margin:"4px 0 0",fontSize:13,color:"#6B7280"}}>Generate, send, and track signed representation agreements</p>
+      </div>
+      <Btn onClick={()=>{setLocalSettings(agencySettings);setShowSettings(true);}} color="#F3F4F6" text="#374151" small>⚙️ Agency Details</Btn>
+    </div>
+
+    {roster.length===0&&<div style={{textAlign:"center",padding:60,color:"#9CA3AF"}}>
+      <div style={{fontSize:48,marginBottom:12}}>📄</div>
+      <div style={{fontSize:16,fontWeight:600,color:"#374151"}}>No creators in roster yet</div>
+      <div style={{fontSize:14,marginTop:8}}>Add creators from Discovery first, then generate contracts here</div>
+    </div>}
+
+    {roster.map(c=>{
+      const contract=contracts[c.id];
+      const status=contract?.status||"None";
+      return<Card key={c.id} style={{marginBottom:10}}>
+        <div style={{display:"flex",gap:14,alignItems:"center",justifyContent:"space-between",flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:14,alignItems:"center"}}>
+            {c.thumbnail&&<img src={c.thumbnail} alt={c.name} style={{width:44,height:44,borderRadius:50,objectFit:"cover"}}/>}
+            <div>
+              <div style={{fontWeight:800,fontSize:15,color:"#0D1B3E"}}>{c.name}</div>
+              <div style={{fontSize:12,color:"#9CA3AF"}}>{fmt(c.subscriber_count)} subs · {c.niche}</div>
+              {status==="Signed"&&contract.signed_at&&<div style={{fontSize:11,color:"#059669",fontWeight:600,marginTop:2}}>
+                ✓ Signed by {contract.signed_name} on {new Date(contract.signed_at).toLocaleString()}
+              </div>}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <Badge label={status} color={statusColor[status]} bg={statusBg[status]} size="lg"/>
+            <Btn small onClick={()=>setSelected(c)} color="#EFF6FF" text="#3B82F6">View / Generate</Btn>
+          </div>
+        </div>
+      </Card>;
+    })}
+
+    {selected&&<Modal title={`Contract — ${selected.name}`} onClose={()=>{setSelected(null);setLinkCopied(false);}} wide>
+      {(()=>{
+        const contract=contracts[selected.id];
+        const text=contract?.contract_text||CONTRACT_TEMPLATE(selected,agencySettings.name,agencySettings.address,agencySettings.repName);
+        return<>
+          <div style={{marginBottom:16}}>
+            <textarea readOnly value={text}
+              style={{width:"100%",height:320,border:"1px solid #E5E7EB",borderRadius:8,padding:14,fontSize:12,fontFamily:"Georgia,serif",lineHeight:1.6,resize:"vertical",boxSizing:"border-box"}}/>
+          </div>
+
+          {contract&&contract.status==="Signed"&&<div style={{background:"#ECFDF5",border:"1px solid #BBF7D0",borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+            <div style={{fontWeight:800,color:"#065F46",marginBottom:6}}>✓ Contract Signed</div>
+            <div style={{fontSize:13,color:"#374151"}}>Signed name: <strong>{contract.signed_name}</strong></div>
+            <div style={{fontSize:13,color:"#374151"}}>Date & time: <strong>{new Date(contract.signed_at).toLocaleString()}</strong></div>
+            <div style={{fontSize:11,color:"#9CA3AF",marginTop:4}}>Recorded IP: {contract.signed_ip||"Not captured"}</div>
+          </div>}
+
+          {!contract&&<div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <Btn onClick={async()=>{const c=await generateAndSend(selected);if(c)setSelected({...selected});}} color="#059669">📤 Generate & Create Signing Link</Btn>
+          </div>}
+
+          {contract&&contract.status==="Sent"&&<div>
+            <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"14px 16px",marginBottom:12}}>
+              <div style={{fontWeight:700,color:"#92400E",marginBottom:8}}>Signing Link Ready</div>
+              <div style={{background:"#fff",border:"1px solid #E5E7EB",borderRadius:6,padding:"8px 10px",fontFamily:"monospace",fontSize:12,wordBreak:"break-all",marginBottom:10}}>
+                {signingUrl(contract.id)}
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <Btn small onClick={()=>{navigator.clipboard.writeText(signingUrl(contract.id));setLinkCopied(true);setTimeout(()=>setLinkCopied(false),2000);}} color={linkCopied?"#059669":"#0D1B3E"}>
+                  {linkCopied?"✓ Copied!":"Copy Signing Link"}
+                </Btn>
+                {selected.email&&<a href={`mailto:${selected.email}?subject=${encodeURIComponent(agencySettings.name+" — Please sign your representation agreement")}&body=${encodeURIComponent("Hi "+selected.name+",\n\nPlease review and sign your representation agreement with "+agencySettings.name+" using the secure link below:\n\n"+signingUrl(contract.id)+"\n\nThis link lets you review the full agreement and sign electronically — no printing needed.\n\nBest,\n"+(agencySettings.repName||""))}`}>
+                  <Btn small color="#059669">✉ Email Signing Link</Btn>
+                </a>}
+              </div>
+              {!selected.email&&<div style={{fontSize:11,color:"#92400E",marginTop:8}}>Add creator's email in Roster → Details to send via email, or just copy the link and send it any way you like.</div>}
+            </div>
+          </div>}
+        </>;
+      })()}
+      <div style={{marginTop:12,padding:"12px 14px",background:"#F3F4F6",borderRadius:8,fontSize:12,color:"#6B7280"}}>
+        ⚠️ This is a template only. Have a licensed attorney review before using for actual signings.
+      </div>
+    </Modal>}
+
+    {showSettings&&<Modal title="Agency Contract Details" onClose={()=>setShowSettings(false)}>
+      <Fld label="Agency Legal Name"><Inp value={localSettings.name} onChange={v=>setLocalSettings(s=>({...s,name:v}))} placeholder="Moth Media"/></Fld>
+      <Fld label="Principal Place of Business (Address)"><Inp value={localSettings.address} onChange={v=>setLocalSettings(s=>({...s,address:v}))} placeholder="123 Main St, Los Angeles, CA"/></Fld>
+      <Fld label="Your Name (Company Representative)"><Inp value={localSettings.repName} onChange={v=>setLocalSettings(s=>({...s,repName:v}))} placeholder="Your full name"/></Fld>
+      <Fld label="Agency Contact Email"><Inp value={localSettings.email} onChange={v=>setLocalSettings(s=>({...s,email:v}))} placeholder="you@agency.com"/></Fld>
+      <Btn full onClick={saveSettings} color="#059669">Save Agency Details</Btn>
+    </Modal>}
+  </div>;
+}
+
+// ─── PUBLIC SIGNING PAGE ────────────────────────────────────────────────────────
+function SigningPage({contractId}){
+  const[contract,setContract]=useState(null);
+  const[loading,setLoading]=useState(true);
+  const[signedName,setSignedName]=useState("");
+  const[agreed,setAgreed]=useState(false);
+  const[submitting,setSubmitting]=useState(false);
+  const[done,setDone]=useState(false);
+  const[error,setError]=useState("");
+
+  useEffect(()=>{
+    async function load(){
+      const{data,error}=await supabase.from("contracts").select("*").eq("id",contractId).single();
+      if(error||!data){setError("Contract not found. The link may be invalid or expired.");}
+      else{setContract(data);if(data.status==="Signed")setDone(true);}
+      setLoading(false);
+    }
+    load();
+  },[contractId]);
+
+  async function submitSignature(){
+    if(!signedName.trim()){setError("Please type your full legal name.");return;}
+    if(!agreed){setError("Please check the box to confirm you agree to the terms.");return;}
+    setSubmitting(true);setError("");
+    let ip="";
+    try{
+      const ipRes=await fetch("https://api.ipify.org?format=json");
+      const ipData=await ipRes.json();
+      ip=ipData.ip||"";
+    }catch(e){ip="unavailable";}
+
+    const{error:updateError}=await supabase.from("contracts").update({
+      status:"Signed",
+      signed_name:signedName.trim(),
+      signed_at:new Date().toISOString(),
+      signed_ip:ip
+    }).eq("id",contractId);
+
+    if(updateError){setError("Error submitting signature: "+updateError.message);setSubmitting(false);return;}
+
+    await supabase.from("creators").update({contract_status:"Signed"}).eq("id",contract.creator_id);
+
+    setDone(true);
+    setSubmitting(false);
+  }
+
+  if(loading)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui"}}>
+    <div style={{textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>📄</div><div style={{color:"#6B7280"}}>Loading contract...</div></div>
+  </div>;
+
+  if(error&&!contract)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",padding:20}}>
+    <Card style={{maxWidth:480,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>⚠️</div><div style={{color:"#EF4444",fontWeight:600}}>{error}</div></Card>
+  </div>;
+
+  return<div style={{minHeight:"100vh",background:"#F8FAFC",fontFamily:"'Inter','Segoe UI',system-ui,sans-serif",padding:"30px 16px"}}>
+    <div style={{maxWidth:680,margin:"0 auto"}}>
+      <div style={{textAlign:"center",marginBottom:24}}>
+        <div style={{fontSize:32,marginBottom:8}}>⚡</div>
+        <div style={{fontWeight:800,fontSize:20,color:"#0D1B3E"}}>{contract.agency_name}</div>
+        <div style={{fontSize:13,color:"#6B7280",marginTop:4}}>Representation Agreement for {contract.creator_name}</div>
+      </div>
+
+      {done?<Card style={{textAlign:"center",padding:"40px 24px"}}>
+        <div style={{fontSize:48,marginBottom:16}}>✅</div>
+        <h2 style={{color:"#059669",margin:"0 0 10px"}}>Agreement Signed!</h2>
+        <p style={{color:"#374151",fontSize:14,marginBottom:20}}>Thank you, {contract.signed_name||signedName}. Your representation agreement has been signed and recorded.</p>
+        <div style={{background:"#F9FAFB",borderRadius:8,padding:"14px 18px",textAlign:"left",fontSize:13,color:"#6B7280"}}>
+          <div>Signed by: <strong style={{color:"#0D1B3E"}}>{contract.signed_name||signedName}</strong></div>
+          <div>Date & time: <strong style={{color:"#0D1B3E"}}>{contract.signed_at?new Date(contract.signed_at).toLocaleString():new Date().toLocaleString()}</strong></div>
+        </div>
+        <p style={{color:"#9CA3AF",fontSize:12,marginTop:20}}>A copy of this signed agreement is on file with {contract.agency_name}. You may screenshot this page for your records.</p>
+      </Card>:<>
+        <Card style={{marginBottom:20}}>
+          <textarea readOnly value={contract.contract_text}
+            style={{width:"100%",height:380,border:"1px solid #E5E7EB",borderRadius:8,padding:14,fontSize:13,fontFamily:"Georgia,serif",lineHeight:1.7,resize:"vertical",boxSizing:"border-box",background:"#FAFBFC"}}/>
+        </Card>
+
+        <Card>
+          <h3 style={{margin:"0 0 16px",color:"#0D1B3E",fontSize:16}}>Sign This Agreement</h3>
+          <Fld label="Type Your Full Legal Name">
+            <Inp value={signedName} onChange={setSignedName} placeholder="e.g. Jane Marie Smith"/>
+          </Fld>
+          <label style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:13,color:"#374151",marginBottom:18,cursor:"pointer"}}>
+            <input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} style={{marginTop:3,width:16,height:16,flexShrink:0}}/>
+            <span>I have read and agree to the terms of this Agreement. I understand that typing my name above and checking this box constitutes my electronic signature, legally binding under the U.S. ESIGN Act.</span>
+          </label>
+          {error&&<div style={{color:"#EF4444",fontSize:13,marginBottom:12}}>{error}</div>}
+          <Btn full onClick={submitSignature} disabled={submitting} color="#059669">
+            {submitting?"Submitting...":"✓ Sign & Submit Agreement"}
+          </Btn>
+        </Card>
+      </>}
+    </div>
+  </div>;
+}
+
+
+
+// ─── INQUIRIES TAB ──────────────────────────────────────────────────────────────
+function InquiriesTab({roster,agencySettings}){
+  const[inquiryType,setInquiryType]=useState("creator");
+  const[targetName,setTargetName]=useState("");
+  const[targetEmail,setTargetEmail]=useState("");
+  const[subject,setSubject]=useState("");
+  const[customMessage,setCustomMessage]=useState("");
+  const[selectedCreatorId,setSelectedCreatorId]=useState("");
+
+  const creatorTemplate=`Hi ${targetName||"[Name]"},
+
+My name is ${agencySettings.repName||"[Your Name]"} and I run ${agencySettings.name||"[Agency Name]"}, a creator talent agency. I came across your channel and your content genuinely stood out to me.
+
+We represent creators by helping them secure brand partnerships, negotiate rates, and manage deal logistics — without you needing to chase down sponsors yourself. We earn a commission only when you get paid, so there's no upfront cost.
+
+Would you be open to a quick call this week to see if we'd be a good fit to work together?
+
+Best,
+${agencySettings.repName||"[Your Name]"}
+${agencySettings.name||"[Agency Name]"} | ${agencySettings.email||"[Your Email]"}`;
+
+  const sponsorTemplate=`Hi ${targetName||"[Brand Contact Name]"},
+
+I'm ${agencySettings.repName||"[Your Name]"} from ${agencySettings.name||"[Agency Name]"}, a creator talent agency. I wanted to reach out about a potential partnership between your brand and one of our creators.
+
+${selectedCreatorId?(()=>{const c=roster.find(r=>r.id===selectedCreatorId);return c?`${c.name} is a ${c.niche} creator with ${fmt(c.subscriber_count)} subscribers and strong, engaged viewership — averaging ${fmt(c.avg_views)} views per video.`:"";})():"We have creators across multiple niches whose audiences may be a strong match for your brand."}
+
+We'd love to explore a sponsored integration, dedicated video, or multi-platform package tailored to your campaign goals.
+
+Would you have 15 minutes this week to discuss?
+
+Best,
+${agencySettings.repName||"[Your Name]"}
+${agencySettings.name||"[Agency Name]"} | ${agencySettings.email||"[Your Email]"}`;
+
+  const finalMessage=customMessage||(inquiryType==="creator"?creatorTemplate:sponsorTemplate);
+
+  return<div style={{maxWidth:700}}>
+    <h2 style={{margin:"0 0 4px",color:"#0D1B3E",fontSize:18}}>✉️ Send Inquiry</h2>
+    <p style={{margin:"0 0 20px",fontSize:13,color:"#6B7280"}}>Draft and send outreach emails to creators or sponsors</p>
+
+    <Card style={{marginBottom:16}}>
+      <Fld label="Inquiry Type">
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>setInquiryType("creator")} style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${inquiryType==="creator"?"#0D1B3E":"#E5E7EB"}`,background:inquiryType==="creator"?"#0D1B3E":"#fff",color:inquiryType==="creator"?"#fff":"#374151",fontWeight:700,cursor:"pointer"}}>🎬 Creator</button>
+          <button onClick={()=>setInquiryType("sponsor")} style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${inquiryType==="sponsor"?"#0D1B3E":"#E5E7EB"}`,background:inquiryType==="sponsor"?"#0D1B3E":"#fff",color:inquiryType==="sponsor"?"#fff":"#374151",fontWeight:700,cursor:"pointer"}}>💼 Sponsor</button>
+        </div>
+      </Fld>
+
+      {inquiryType==="sponsor"&&roster.length>0&&<Fld label="Featured Creator (optional)">
+        <Sel value={selectedCreatorId} onChange={setSelectedCreatorId} options={[{value:"",label:"None — general inquiry"},...roster.map(c=>({value:c.id,label:c.name}))]}/>
+      </Fld>}
+
+      <Fld label="Recipient Name"><Inp value={targetName} onChange={setTargetName} placeholder={inquiryType==="creator"?"Creator name":"Brand contact name"}/></Fld>
+      <Fld label="Recipient Email"><Inp value={targetEmail} onChange={setTargetEmail} placeholder="email@example.com"/></Fld>
+      <Fld label="Subject Line"><Inp value={subject} onChange={setSubject} placeholder={inquiryType==="creator"?"Partnership opportunity":"Brand partnership opportunity"}/></Fld>
+
+      <Fld label="Message (auto-generated — edit as needed)">
+        <textarea value={finalMessage} onChange={e=>setCustomMessage(e.target.value)}
+          style={{width:"100%",height:280,border:"1px solid #D1D5DB",borderRadius:8,padding:12,fontSize:13,fontFamily:"Arial",resize:"vertical",boxSizing:"border-box"}}/>
+      </Fld>
+
+      <div style={{display:"flex",gap:10}}>
+        <Btn onClick={()=>navigator.clipboard.writeText(finalMessage)} color="#F3F4F6" text="#374151">Copy Message</Btn>
+        {targetEmail&&<a href={`mailto:${targetEmail}?subject=${encodeURIComponent(subject||(inquiryType==="creator"?"Partnership opportunity":"Brand partnership opportunity"))}&body=${encodeURIComponent(finalMessage)}`}>
+          <Btn color="#059669">✉ Open in Email App</Btn>
+        </a>}
+      </div>
+    </Card>
+
+    <div style={{fontSize:12,color:"#9CA3AF"}}>
+      Clicking "Open in Email App" launches your default email client (Mail, Outlook, Gmail app) with everything pre-filled. You review and hit send from there.
+    </div>
+  </div>;
+}
+
+
   const[key,setKey]=useState(apiKey);
   const[saved,setSaved]=useState(false);
   function save(){setApiKey(key);setSaved(true);setTimeout(()=>setSaved(false),2000);}
@@ -588,6 +936,22 @@ export default function App(){
   const[roster,setRoster]=useState([]);
   const[deals,setDeals]=useState([]);
   const[loading,setLoading]=useState(true);
+  const[agencySettings,setAgencySettings]=useState({name:"Moth Media",address:"",repName:"",email:""});
+  const[signContractId,setSignContractId]=useState(null);
+
+  useEffect(()=>{
+    function checkHash(){
+      const hash=window.location.hash;
+      if(hash.startsWith("#sign/")){
+        setSignContractId(hash.replace("#sign/",""));
+      }else{
+        setSignContractId(null);
+      }
+    }
+    checkHash();
+    window.addEventListener("hashchange",checkHash);
+    return()=>window.removeEventListener("hashchange",checkHash);
+  },[]);
 
   useEffect(()=>{
     async function loadData(){
@@ -644,7 +1008,9 @@ export default function App(){
     if(data)setRoster(r=>[data,...r]);
   }
 
-  const tabs=[{key:"dashboard",label:"📊 Dashboard"},{key:"discovery",label:"🔍 Discovery"},{key:"roster",label:"🎬 Roster"},{key:"sponsors",label:"💼 Sponsors"},{key:"deals",label:"🤝 Deals"},{key:"settings",label:"⚙️ Settings"}];
+  const tabs=[{key:"dashboard",label:"📊 Dashboard"},{key:"discovery",label:"🔍 Discovery"},{key:"roster",label:"🎬 Roster"},{key:"sponsors",label:"💼 Sponsors"},{key:"deals",label:"🤝 Deals"},{key:"contracts",label:"📄 Contracts"},{key:"inquiries",label:"✉️ Inquiries"},{key:"settings",label:"⚙️ Settings"}];
+
+  if(signContractId)return<SigningPage contractId={signContractId}/>;
 
   if(loading)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:"#0D1B3E"}}><div style={{textAlign:"center"}}><div style={{fontSize:48,marginBottom:16}}>⚡</div><div style={{fontSize:18,fontWeight:700}}>Loading Agency OS...</div></div></div>;
 
@@ -678,6 +1044,8 @@ export default function App(){
       {tab==="roster"&&<RosterTab roster={roster} setRoster={setRoster}/>}
       {tab==="sponsors"&&<SponsorsTab roster={roster}/>}
       {tab==="deals"&&<DealsTab deals={deals} setDeals={setDeals} roster={roster}/>}
+      {tab==="contracts"&&<ContractsTab roster={roster} setRoster={setRoster} agencySettings={agencySettings} setAgencySettings={setAgencySettings}/>}
+      {tab==="inquiries"&&<InquiriesTab roster={roster} agencySettings={agencySettings}/>}
       {tab==="settings"&&<SettingsTab apiKey={apiKey} setApiKey={setApiKey}/>}
     </div>
   </div>;
