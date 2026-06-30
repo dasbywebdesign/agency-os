@@ -910,7 +910,7 @@ ${agencySettings.name||"[Agency Name]"} | ${agencySettings.email||"[Your Email]"
   </div>;
 }
 
-
+function SettingsTab({apiKey,setApiKey}){
   const[key,setKey]=useState(apiKey);
   const[saved,setSaved]=useState(false);
   function save(){setApiKey(key);setSaved(true);setTimeout(()=>setSaved(false),2000);}
