@@ -567,11 +567,11 @@ const CONTRACT_TEMPLATE = (creator, agencyName, agencyAddress, repName, creatorA
 
 This Agreement ("Agreement") is entered into as of ${new Date().toLocaleDateString()}, ("Effective Date") by and between ${agencyName||"MOTH MEDIA"}, with its principal place of business located at ${agencyAddress||"_______________________________"} ("COMPANY"), and ${creator?.name||"_______________________________"}, residing at ${creatorAddress||"_______________________________"} ("CLIENT"). COMPANY and CLIENT are referred to herein individually as a "Party" and collectively as "Parties".
 
-1. ENGAGEMENT - i. CLIENT hereby engages COMPANY on an exclusive basis to commercially promote and market CLIENT's name, likeness, social media account(s), biographical data, and any other skill, talent, or product of CLIENT; and
+1. ENGAGEMENT - CLIENT hereby engages COMPANY on an exclusive basis to commercially promote and market CLIENT's name, likeness, social media account(s), biographical data, and any other skill, talent, or product of CLIENT.
 
 2. SERVICES - COMPANY shall promote and market CLIENT to brands, prospective employers, agencies, vendors, and/or other third parties, in relation to the Entertainment Industry.
 
-3. COMPANY'S AUTHORITY - COMPANY may commercially exploit and use CLIENT's name, likeness, facsimile signature, and related materials in any and all media now known or hereinafter created, for the purposes of promoting CLIENT, CLIENT work product and CLIENT's name in the Entertainment Industry. COMPANY may additionally use CLIENT's name and likeness, in COMPANY'S marketing and promotional materials identifying CLIENT as a client of COMPANY. CLIENT shall retain all creative control over content, posting schedule, video concepts, and anything pertaining to video / channel creative or activities related to creative.
+3. COMPANY'S AUTHORITY - COMPANY may commercially use CLIENT's name, likeness, facsimile signature, and related materials in any and all media now known or hereinafter created, for the purposes of promoting CLIENT, CLIENT work product and CLIENT's name in the Entertainment Industry. COMPANY may additionally use CLIENT's name and likeness, in COMPANY'S marketing and promotional materials identifying CLIENT as a client of COMPANY. CLIENT shall retain all creative control over content, posting schedule, video concepts, and anything pertaining to video / channel creative or activities related to creative.
 
 4. TERM - CLIENT hereby engages COMPANY on an exclusive basis for a period of (12 months) commencing on the Effective Date (the "Initial Term"). At the end of the initial term, Both CLIENT and COMPANY must mutually agree in writing the intent to renew this agreement for a period of 12 months.
 
