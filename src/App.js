@@ -672,7 +672,11 @@ function ContractsTab({roster,setRoster,agencySettings,setAgencySettings}){
     return()=>sub.unsubscribe();
   },[]);
 
-  function saveSettings(){setAgencySettings(localSettings);setShowSettings(false);}
+  async function saveSettings(){
+    setAgencySettings(localSettings);
+    await supabase.from("app_settings").upsert({key:"agency_settings",value:JSON.stringify(localSettings)});
+    setShowSettings(false);
+  }
 
   async function generateAndSend(creator){
     const contractId=(crypto.randomUUID?crypto.randomUUID():"c_"+Date.now()+"_"+Math.random().toString(36).slice(2));
@@ -988,13 +992,19 @@ ${agencySettings.name||"[Agency Name]"} | ${agencySettings.email||"[Your Email]"
 function SettingsTab({apiKey,setApiKey}){
   const[key,setKey]=useState(apiKey);
   const[saved,setSaved]=useState(false);
-  function save(){setApiKey(key);setSaved(true);setTimeout(()=>setSaved(false),2000);}
+  useEffect(()=>{setKey(apiKey);},[apiKey]);
+  async function save(){
+    setApiKey(key);
+    await supabase.from("app_settings").upsert({key:"youtube_api_key",value:key});
+    setSaved(true);setTimeout(()=>setSaved(false),2000);
+  }
   return<div style={{maxWidth:600}}>
     <Card style={{marginBottom:20}}>
       <h3 style={{margin:"0 0 16px",color:"#0D1B3E"}}>YouTube API Key</h3>
       <Fld label="API Key"><Inp value={key} onChange={setKey} placeholder="AIza..." type="password"/></Fld>
       <p style={{fontSize:13,color:"#6B7280",marginBottom:14}}>Get your free key from <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" style={{color:"#3B82F6"}}>console.cloud.google.com</a> → APIs & Services → Credentials</p>
       <Btn onClick={save} color={saved?"#059669":"#0D1B3E"}>{saved?"✓ Saved!":"Save API Key"}</Btn>
+      <p style={{fontSize:12,color:"#9CA3AF",marginTop:10}}>✅ This key now syncs to your shared database — your partner sees it too, and it persists across refreshes and devices.</p>
     </Card>
     <Card>
       <h3 style={{margin:"0 0 16px",color:"#0D1B3E"}}>✅ Real-Time Database</h3>
@@ -1030,15 +1040,35 @@ export default function App(){
 
   useEffect(()=>{
     async function loadData(){
-      const[{data:creators},{data:dealData}]=await Promise.all([
+      const[{data:creators},{data:dealData},{data:settingsData}]=await Promise.all([
         supabase.from("creators").select("*").order("added_at",{ascending:false}),
-        supabase.from("deals").select("*").order("id",{ascending:false})
+        supabase.from("deals").select("*").order("id",{ascending:false}),
+        supabase.from("app_settings").select("*")
       ]);
       if(creators)setRoster(creators);
       if(dealData)setDeals(dealData);
+      if(settingsData){
+        const map={};
+        settingsData.forEach(s=>{map[s.key]=s.value;});
+        if(map.youtube_api_key)setApiKey(map.youtube_api_key);
+        if(map.agency_settings){
+          try{setAgencySettings(JSON.parse(map.agency_settings));}catch(e){}
+        }
+      }
       setLoading(false);
     }
     loadData();
+
+    const settingsSub=supabase.channel("app_settings").on("postgres_changes",{event:"*",schema:"public",table:"app_settings"},()=>{
+      supabase.from("app_settings").select("*").then(({data})=>{
+        if(data){
+          const map={};
+          data.forEach(s=>{map[s.key]=s.value;});
+          if(map.youtube_api_key)setApiKey(map.youtube_api_key);
+          if(map.agency_settings){try{setAgencySettings(JSON.parse(map.agency_settings));}catch(e){}}
+        }
+      });
+    }).subscribe();
 
     // Real-time subscriptions
     const creatorSub=supabase.channel("creators").on("postgres_changes",{event:"*",schema:"public",table:"creators"},()=>{
@@ -1049,7 +1079,7 @@ export default function App(){
       supabase.from("deals").select("*").order("id",{ascending:false}).then(({data})=>{if(data)setDeals(data);});
     }).subscribe();
 
-    return()=>{creatorSub.unsubscribe();dealSub.unsubscribe();};
+    return()=>{creatorSub.unsubscribe();dealSub.unsubscribe();settingsSub.unsubscribe();};
   },[]);
 
   async function addToRoster(creator){
